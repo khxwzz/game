@@ -38,7 +38,7 @@ class MainMenu extends JFrame {
 }
 
 class Game extends JPanel implements ActionListener {
-    private Timer timer, countdownTimer;
+    private Timer timer;
     private Player player1;
     private Player2 player2;
     private ArrayList<Wall> walls;
@@ -47,28 +47,12 @@ class Game extends JPanel implements ActionListener {
     private JButton mainMenuButton;
     private BufferedImage background;
     private int level;
-    private int timeRemaining; // ตัวแปรเก็บเวลาที่เหลือ
-    private final int MAX_TIME = 60; // เวลาสูงสุดในด่าน (60 วินาที)
 
     public Game(int level) {
         this.level = level;
-        this.timeRemaining = MAX_TIME; // ตั้งค่าเวลาเริ่มต้น
         initializeGame();
         setupUI();
         loadBackground();
-        startCountdown();
-    }
-
-    private void startCountdown() {
-        countdownTimer = new Timer(1000, e -> {
-            if (timeRemaining > 0) {
-                timeRemaining--; // ลดเวลาทุกๆ 1 วินาที
-            } else {
-                gameOver = true;
-                repaint(); // สิ้นสุดเกมเมื่อเวลาเหลือ 0
-            }
-        });
-        countdownTimer.start();
     }
 
     private void initializeGame() {
@@ -166,11 +150,6 @@ class Game extends JPanel implements ActionListener {
             wall.draw(g);
         }
 
-        // แสดงเวลาที่เหลือ
-        g.setColor(Color.WHITE);
-        g.setFont(new Font("Arial", Font.BOLD, 20));
-        g.drawString("Time Remaining: " + timeRemaining, 20, 30);
-
         if (gameOver) {
             g.setColor(Color.BLACK);
             g.setFont(new Font("Arial", Font.BOLD, 40));
@@ -236,7 +215,6 @@ class Game extends JPanel implements ActionListener {
 
     private void resetGame() {
         gameOver = false;
-        timeRemaining = MAX_TIME; // รีเซ็ตเวลา
         player1.setAlive(true);
         player2.setAlive(true);
         player1 = new Player(50, 450, "player1.png", Color.BLUE);
@@ -295,64 +273,109 @@ class Player {
     }
 
     public void update(ArrayList<Wall> walls) {
-        if (!alive) return;
+        if (up && canMove(0, -2, walls)) y -= 2;
+        if (down && canMove(0, 2, walls)) y += 2;
+        if (left && canMove(-2, 0, walls)) x -= 2;
+        if (right && canMove(2, 0, walls)) x += 2;
 
-        if (up) y -= 5;
-        if (down) y += 5;
-        if (left) x -= 5;
-        if (right) x += 5;
-
-        // Check for wall collisions
-        for (Wall wall : walls) {
-            if (getBounds().intersects(wall.getBounds())) {
-                if (up) y += 5;
-                if (down) y -= 5;
-                if (left) x += 5;
-                if (right) x -= 5;
+        for (int i = bullets.size() - 1; i >= 0; i--) {
+            Bullet bullet = bullets.get(i);
+            bullet.update();
+            if (!bullet.isAlive()) {
+                bullets.remove(i);
             }
         }
+    }
 
-        for (Bullet bullet : bullets) {
-            bullet.update();
-        }
+    public void shoot(double angle) {
+        Bullet bullet = new Bullet(x + width / 2, y + height / 2, angle, bulletColor);
+        bullets.add(bullet);
     }
 
     public void keyPressed(KeyEvent e) {
-        int key = e.getKeyCode();
-        if (key == KeyEvent.VK_UP) up = true;
-        if (key == KeyEvent.VK_DOWN) down = true;
-        if (key == KeyEvent.VK_LEFT) left = true;
-        if (key == KeyEvent.VK_RIGHT) right = true;
-        if (key == KeyEvent.VK_SPACE) fireBullet();
+        switch (e.getKeyCode()) {
+            case KeyEvent.VK_W:
+                up = true;
+                break;
+            case KeyEvent.VK_S:
+                down = true;
+                break;
+            case KeyEvent.VK_A:
+                left = true;
+                break;
+            case KeyEvent.VK_D:
+                right = true;
+                break;
+            case KeyEvent.VK_SPACE:
+                shoot(getAngle());
+                break;
+        }
     }
 
     public void keyReleased(KeyEvent e) {
-        int key = e.getKeyCode();
-        if (key == KeyEvent.VK_UP) up = false;
-        if (key == KeyEvent.VK_DOWN) down = false;
-        if (key == KeyEvent.VK_LEFT) left = false;
-        if (key == KeyEvent.VK_RIGHT) right = false;
+        switch (e.getKeyCode()) {
+            case KeyEvent.VK_W:
+                up = false;
+                break;
+            case KeyEvent.VK_S:
+                down = false;
+                break;
+            case KeyEvent.VK_A:
+                left = false;
+                break;
+            case KeyEvent.VK_D:
+                right = false;
+                break;
+        }
     }
 
-    public void fireBullet() {
-        bullets.add(new Bullet(x + width / 2, y + height / 2, bulletColor));
+    protected boolean canMove(int dx, int dy, ArrayList<Wall> walls) {
+        Rectangle newBounds = new Rectangle(x + dx, y + dy, width, height);
+        for (Wall wall : walls) {
+            if (newBounds.intersects(wall.getBounds())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    protected double getAngle() {
+        if (up && !down && !left && !right) return -Math.PI / 2;
+        if (!up && down && !left && !right) return Math.PI / 2;
+        if (!up && !down && left && !right) return Math.PI;
+        if (!up && !down && !left && right) return 0;
+        if (up && !down && left && !right) return -3 * Math.PI / 4;
+        if (up && !down && !left && right) return -Math.PI / 4;
+        if (!up && down && left && !right) return 3 * Math.PI / 4;
+        if (!up && down && !left && right) return Math.PI / 4;
+        return lastAngle;
+    }
+
+    protected Image rotateImage(BufferedImage img, double angle) {
+        int w = img.getWidth();
+        int h = img.getHeight();
+        BufferedImage rotatedImage = new BufferedImage(w, h, img.getType());
+        Graphics2D g2d = rotatedImage.createGraphics();
+        g2d.rotate(angle, w / 2, h / 2);
+        g2d.drawImage(img, 0, 0, null);
+        g2d.dispose();
+        return rotatedImage;
     }
 
     public Rectangle getBounds() {
         return new Rectangle(x, y, width, height);
     }
 
-    public void setAlive(boolean alive) {
-        this.alive = alive;
+    public ArrayList<Bullet> getBullets() {
+        return bullets;
     }
 
     public boolean isAlive() {
         return alive;
     }
 
-    private double getAngle() {
-        double angle = Math.atan2(y - height / 2 - lastAngle, x + width / 2 - lastAngle);
-        return angle;
+    public void setAlive(boolean alive) {
+        this.alive = alive;
     }
 }
 
@@ -361,7 +384,86 @@ class Player2 extends Player {
         super(x, y, imagePath, bulletColor);
     }
 
-    // Override any specific methods for Player 2 if needed
+    @Override
+    public void keyPressed(KeyEvent e) {
+        switch (e.getKeyCode()) {
+            case KeyEvent.VK_UP:
+                up = true;
+                break;
+            case KeyEvent.VK_DOWN:
+                down = true;
+                break;
+            case KeyEvent.VK_LEFT:
+                left = true;
+                break;
+            case KeyEvent.VK_RIGHT:
+                right = true;
+                break;
+            case KeyEvent.VK_ENTER:
+                shoot(getAngle());
+                break;
+        }
+    }
+
+    @Override
+    public void keyReleased(KeyEvent e) {
+        switch (e.getKeyCode()) {
+            case KeyEvent.VK_UP:
+                up = false;
+                break;
+            case KeyEvent.VK_DOWN:
+                down = false;
+                break;
+            case KeyEvent.VK_LEFT:
+                left = false;
+                break;
+            case KeyEvent.VK_RIGHT:
+                right = false;
+                break;
+        }
+    }
+}
+
+class Bullet {
+    private int x, y;
+    private final int speed = 5;
+    private double angle;
+    private boolean alive = true;
+    private Color color;
+
+    public Bullet(int x, int y, double angle, Color color) {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.color = color;
+    }
+
+    public void draw(Graphics g) {
+        if (alive) {
+            g.setColor(color);
+            g.fillOval(x, y, 10, 10);
+        }
+    }
+
+    public void update() {
+        x += speed * Math.cos(angle);
+        y += speed * Math.sin(angle);
+        if (x < 0 || x > 800 || y < 0 || y > 600) {
+            alive = false;
+        }
+    }
+
+    public Rectangle getBounds() {
+        return new Rectangle(x, y, 10, 10);
+    }
+
+    public boolean isAlive() {
+        return alive;
+    }
+
+    public void setAlive(boolean alive) {
+        this.alive = alive;
+    }
 }
 
 class Wall {
@@ -390,41 +492,5 @@ class Wall {
 
     public Rectangle getBounds() {
         return new Rectangle(x, y, width, height);
-    }
-}
-
-class Bullet {
-    private int x, y;
-    private int width = 10, height = 10;
-    private Color color;
-    private boolean alive = true;
-
-    public Bullet(int x, int y, Color color) {
-        this.x = x;
-        this.y = y;
-        this.color = color;
-    }
-
-    public void draw(Graphics g) {
-        if (alive) {
-            g.setColor(color);
-            g.fillRect(x, y, width, height);
-        }
-    }
-
-    public void update() {
-        y -= 10; // Make the bullet move upwards
-    }
-
-    public Rectangle getBounds() {
-        return new Rectangle(x, y, width, height);
-    }
-
-    public void setAlive(boolean alive) {
-        this.alive = alive;
-    }
-
-    public boolean isAlive() {
-        return alive;
     }
 }
